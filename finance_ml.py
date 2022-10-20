@@ -437,7 +437,7 @@ def make_volatility(
     :param col_name: имя клонки, которую требуется обработать
     :param ticker_name: название инструмента для имени новосозданной колонки
     :param vola_type: 'standart', 'downside'
-    :param vola_lens: за сколько баров, дней, недель, месяцев замеряем моментум.
+    :param vola_lens: за сколько баров, дней, недель, месяцев замеряем волу.
     :param vola_period: 'bars', 'daily', 'weekly', 'monthly', 'end_week', 'end_month'
 
     """
@@ -756,6 +756,77 @@ def get_today_prices(dict_data: dict, concat_col: str='adjClose', take_col: str=
         dict_data[ticker].index.name = 'date'
 
     return dict_data
+
+
+def portfolio_enters_by_cols_sorter(
+        df: pd.DataFrame,
+        rank_col_name: str,
+        gain_col_name: str,
+        tickers: list,
+        cnt_positions: int = 3,
+        sort_largest: bool = True
+) -> (pd.DataFrame, list):
+    """
+    Получает pd.DataFrame, в котором должны содержаться колонки с %cng активов, колонки ранжируя которые функция
+        определит позиции на каждый искомый период. В качестве индекса pd.Timestamp
+
+    @param df:
+    @param rank_col_name: часть названия колонок с данными для ранжирования, типа '{rank_col_name}_{ticker}'
+    @param gain_col_name: часть названия колонок с %cng активов, типа 'f'{gain_col_name}_{ticker}'
+    @param tickers: список тикеров для анализа
+    @param cnt_positions: количество позиций, которые будут выбраны после ранкинга
+    @param sort_largest: ранжировать от большего к меньшему, или наоборот
+    @return: обогащённый pd.DataFrame. Название колонок со входами.
+
+    """
+    rank_cols = [col for col in df.columns if rank_col_name in col]
+    if sort_largest:
+        sort_columns = df[rank_cols].apply(lambda s: ",".join(s.nlargest(cnt_positions).index.tolist()), axis=1)
+    else:
+        sort_columns = df[rank_cols].apply(lambda s: ",".join(s.nsmallest(cnt_positions).index.tolist()), axis=1)
+
+    enter_cols = []
+    for ticker in tickers:
+        idx_mask = sort_columns[sort_columns.str.contains(f'{rank_col_name}_{ticker}')].index
+        df.loc[idx_mask, f'enter_{ticker}'] = df[f'{gain_col_name}_{ticker}']
+        enter_cols.append(f'enter_{ticker}')
+
+    return df, enter_cols
+
+
+def make_pivot_table(df: pd.DataFrame, x: str, y: str, z: str) -> pd.DataFrame:
+    """
+    Pivot-таблица, наглядный пример.
+
+    @param df: pd.DataFrame
+    @param x: колонка для создания индекса
+    @param y: колонка для создания имён новых колонок
+    @param z: колонка, которая будет служить значениями в новой таблице
+    @return:
+
+    """
+    return pd.pivot_table(df[[x, y, z]], values=z, index=x, columns=y)
+
+
+def make_3D_surface(df: pd.DataFrame, values_name: str, title: str) -> go.Figure:
+    """
+    Отрисовка 3D плоскости, где df имеет вид pivot_table
+
+    @param df: pd.DataFrame, в виде pivot_table
+    @param values_name: имя для значений таблицы
+    @param title: название графика
+    @return: go.Figure
+    """
+    fig = go.Figure(go.Surface(x=df.columns, y=df.index, z=df.values))
+    fig.update_layout(
+        title=title,
+        scene=dict(xaxis_title=df.columns.name, yaxis_title=df.index.name, zaxis_title=values_name),
+        # width=1_200,
+        # height=800,
+        # margin=dict(l=65, r=50, b=65, t=90),
+    )
+
+    return fig
 
 
 if __name__ == '__main__':
